@@ -7,6 +7,7 @@ class BruteForce
 private:
 	size_t substrLen(const bfbyte* x);
 	void initPossibleChars();
+	void initPossibleChars(bfbyte* charset, size_t charsetLen);
 	void resetNewPossibleChars();
 
 	bfbyte* input;
@@ -29,7 +30,10 @@ private:
 	//the new possible chars to record, with the length of numOfNextByteToTrav
 	bool (*newPossibleChars)[NUM_OF_POSSIBLE_CHARS];
 
-	size_t keyProg;
+	//progress to record number of common prefix currently
+	size_t lockedPrefixNum;
+	size_t* lockedProgForEachInput;
+	size_t blockSize;
 protected:
 	bool traverseNext();
 	virtual void doEncode() = 0;
@@ -37,7 +41,10 @@ protected:
 	//with encoded result of current input
 	//(obtained by getInput) in some way
 public:
-	BruteForce(size_t inputLen, const bfbyte* answer, size_t answerLen);
+	BruteForce(size_t inputLen, const bfbyte* answer, 
+		size_t answerLen, 
+		size_t blockSize = 1, 
+		bfbyte* charset = nullptr, size_t numOfChars = NUM_OF_POSSIBLE_CHARS);
 	virtual ~BruteForce();
 
 	void startCrack();
@@ -46,3 +53,27 @@ public:
 	size_t getInput(bfbyte * dst);
 };
 
+
+template<typename F>
+class CrackCtf : public BruteForce
+{
+public:
+	CrackCtf(size_t inputLen, const bfbyte* answer, size_t answerLen, 
+		F doEnc = nullptr, size_t blockSize = 1, 
+		bfbyte* charset = nullptr, size_t numOfChars = NUM_OF_POSSIBLE_CHARS)
+		:BruteForce(inputLen, answer, answerLen, blockSize, charset, numOfChars),
+		doEnc(doEnc) {}
+	void setDoEnc(F func)
+	{
+		doEnc = func;
+	}
+	~CrackCtf() {};
+private:
+	F doEnc;
+	virtual void doEncode() override
+	{//继承重写doEncode函数，他必须要通过getInput获取到当前输入，然后把这个输入加密，再把加密结果作为参数调用testEncodeResult
+	 //this function must call getInput to get the input, encode it, 
+	 //and call testEncodeResult with the result of encoding
+		doEnc();
+	}
+};

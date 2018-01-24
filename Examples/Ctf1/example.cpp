@@ -21,30 +21,13 @@ typedef int(*main_t)();
 
 main_t hismain;
 
-class CrackCtf : public BruteForce
-{
-public:
-	CrackCtf(size_t inputLen, const bfbyte* answer, size_t answerLen)
-		:BruteForce(inputLen, answer, answerLen) {}
-	~CrackCtf();
-private:
 
-	virtual void doEncode() override
-	{//继承重写doEncode函数，他必须要通过getInput获取到当前输入，然后把这个输入加密，再把加密结果作为参数调用testEncodeResult
-	 //this function must call getInput to get the input, encode it, 
-	 //and call testEncodeResult with the result of encoding
-		hismain();//调用他的主函数，这个时候主函数已经被各种hook了
-	}
-public:
-	static size_t __cdecl myfwrite(char *str, size_t Size, size_t Count, FILE *File);
-};
-CrackCtf::~CrackCtf() {}
 
-CrackCtf crack(INPUT_LEN, (const bfbyte*)KEY, strlen(KEY));
+CrackCtf<main_t> crack(INPUT_LEN, (const bfbyte*)KEY, strlen(KEY), nullptr);
 //本应该是单例模式，但是CTF比赛的时间不可能给你写单例
 //第一个参数是所需要破解的最大长度，这个我是自己试出来的（看多长的输入才能跟要求的答案一样长并且没有等于号（因为这是魔改base64）。。。
 //后面两个参数是密文和密文的长度
-size_t CrackCtf::myfwrite(char * str, size_t Size, size_t Count, FILE * File)
+size_t myfwrite(char * str, size_t Size, size_t Count, FILE * File)
 {
 	//printf("%s\n", str);
 	if (crack.testEncodeResult((bfbyte*)str))
@@ -61,7 +44,16 @@ size_t CrackCtf::myfwrite(char * str, size_t Size, size_t Count, FILE * File)
 
 char* __cdecl mygets(char* buffer)
 {
-	crack.getInput((bfbyte*)buffer);
+	size_t len = crack.getInput((bfbyte*)buffer);
+
+	if (rand() == 0)
+	{
+		for (size_t i = 0; i < len; i++)
+		{
+			printf("%x ", (bfbyte)buffer[i]);
+		}
+		printf("\n");
+	}
 	//get当前的Input，并且塞到缓冲区里面
 	return buffer;
 }
@@ -73,18 +65,30 @@ int main()
 	HMODULE pBase = LoadLibraryA("Encrypt messages.dll");
 	//Encrypt messages is an exe crack me in one CTF competition
 	//change the characteristic to dll, and set the entry address to 0, it can become a dll
-
-	hookIAT(pBase, GETS_IAT, (func_p_t)&mygets);
-	hookIAT(pBase, FWRITE_IAT, (func_p_t)&CrackCtf::myfwrite);
-	hookIAT(pBase, SYSTEM_IAT, (func_p_t)&emptyfunc);
-	hookIAT(pBase, FOPEN_IAT, (func_p_t)&emptyfunc);
-	hookIAT(pBase, FCLOSE_IAT, (func_p_t)&emptyfunc);
-	hookIAT(pBase, COUT_IAT, (func_p_t)&emptyfunc2);
-	hookE8Call(pBase, OUTPUT_STR_E8ARG, (func_p_t)&emptyfunc);
-	//hook IAT 和 e8 call
-	hismain = (main_t)((PBYTE)pBase + MAIN_DISPL);
+	if (pBase == NULL)
+	{
+		MessageBoxA(NULL, "cannot open dll!", "error", MB_OK);
+		return -1;
+	}
+	try
+	{
+		hookIAT(pBase, GETS_IAT, (func_p_t)&mygets);
+		hookIAT(pBase, FWRITE_IAT, (func_p_t)&myfwrite);
+		hookIAT(pBase, SYSTEM_IAT, (func_p_t)&emptyfunc);
+		hookIAT(pBase, FOPEN_IAT, (func_p_t)&emptyfunc);
+		hookIAT(pBase, FCLOSE_IAT, (func_p_t)&emptyfunc);
+		hookIAT(pBase, COUT_IAT, (func_p_t)&emptyfunc2);
+		hookE8Call(pBase, OUTPUT_STR_E8ARG, (func_p_t)&emptyfunc);
+		//hook IAT 和 e8 call
+		hismain = (main_t)((PBYTE)pBase + MAIN_DISPL);
+	}
+	catch (const HookException&)
+	{
+		MessageBoxA(NULL, "hook failed!", "error", MB_OK);
+		return -1;
+	}
 	//算出Main函数地址
-
+	crack.setDoEnc(hismain);
 	crack.startCrack();
 	//调用startCrack，开始爆破
 	return 0;
